@@ -1,0 +1,133 @@
+// The tob package that contains common data types used and common functions
+
+`ifndef TB_PKG 
+`define TB_PKG
+
+package tb_pkg;
+
+    // R-type:  funct7 | rs2 | rs1 | funct3 | rd | opcode
+    typedef struct packed {
+        logic [6:0] funct7;
+        logic [4:0] rs2;
+        logic [4:0] rs1;
+        logic [2:0] funct3;
+        logic [4:0] rd;
+        logic [6:0] opcode;
+    } r_type_t;
+
+    // I-type:  imm[11:0] | rs1 | funct3 | rd | opcode
+    typedef struct packed {
+        logic [11:0] imm_11_0;
+        logic [4:0]  rs1;
+        logic [2:0]  funct3;
+        logic [4:0]  rd;
+        logic [6:0]  opcode;
+    } i_type_t;
+
+    // S-type:  imm[11:5] | rs2 | rs1 | funct3 | imm[4:0] | opcode
+    typedef struct packed {
+        logic [6:0] imm_11_5;
+        logic [4:0] rs2;
+        logic [4:0] rs1;
+        logic [2:0] funct3;
+        logic [4:0] imm_4_0;
+        logic [6:0] opcode;
+    } s_type_t;
+
+    // B-type:  imm[12] | imm[10:5] | rs2 | rs1 | funct3 | imm[4:1] | imm[11] | opcode
+    typedef struct packed {
+        logic       imm_12;
+        logic [5:0] imm_10_5;
+        logic [4:0] rs2;
+        logic [4:0] rs1;
+        logic [2:0] funct3;
+        logic [3:0] imm_4_1;
+        logic       imm_11;
+        logic [6:0] opcode;
+    } b_type_t;
+
+    // U-type:  imm[31:12] | rd | opcode
+    typedef struct packed {
+        logic [19:0] imm_31_12;
+        logic [4:0]  rd;
+        logic [6:0]  opcode;
+    } u_type_t;
+
+    // J-type:  imm[20] | imm[10:1] | imm[11] | imm[19:12] | rd | opcode
+    typedef struct packed {
+        logic        imm_20;
+        logic [9:0]  imm_10_1;
+        logic        imm_11;
+        logic [7:0]  imm_19_12;
+        logic [4:0]  rd;
+        logic [6:0]  opcode;
+    } j_type_t;
+
+    // Common union same 32-bit instruction
+    typedef union packed {
+        logic [31:0]    raw;
+        r_type_t  r_type;
+        i_type_t  i_type;
+        s_type_t  s_type;
+        b_type_t  b_type;
+        u_type_t  u_type;
+        j_type_t  j_type;
+    } instr_t;
+
+    // enum for targeted instructions
+    typedef enum logic [5:0] {
+        LUI, AUIPC, JAL, JALR,
+        BEQ, BNE, BLT, BGE, BLTU, BGEU,
+        LB, LH, LW, LBU, LHU, SB, SH, SW,
+        ADDI, SLTI, SLTIU, XORI, ORI, ANDI, SLLI, SRLI, SRAI,
+        ADD, SUB, SLL, SLT, SLTU, XOR, SRL, SRA, OR, AND,
+        MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU
+    } instr_e;
+
+    // enum for instruciton groups
+    typedef enum{
+        ALU_R, ALU_I, SHIFT, LOAD, STORE, BRANCH, JUMP, MULDIV, UPPER
+    } instr_group_e;
+
+
+    //----------------------------- functions used ------------------------\\
+    function bit [6:0] get_opcode(instr_e op);
+        case (op)
+            LUI:                                           return 7'b0110111;
+            AUIPC:                                         return 7'b0010111;
+            JAL:                                           return 7'b1101111;
+            JALR:                                          return 7'b1100111;
+            BEQ, BNE, BLT, BGE, BLTU, BGEU:                return 7'b1100011;
+            LB, LH, LW, LBU, LHU:                          return 7'b0000011;
+            SB, SH, SW:                                    return 7'b0100011;
+            ADDI, SLTI, SLTIU, XORI, ORI, ANDI,
+            SLLI, SRLI, SRAI:                              return 7'b0010011;
+            default:                                       return 7'b0110011; // R-type + M
+        endcase
+    endfunction
+
+    function bit [2:0] get_funct3(instr_e o);
+        case (o)
+            BEQ, LB, SB, ADDI, ADD, SUB, MUL, JALR:        return 3'b000;
+            BNE, LH, SH, SLLI, SLL, MULH:                  return 3'b001;
+            LW, SW, SLTI, SLT, MULHSU:                     return 3'b010;
+            SLTIU, SLTU, MULHU:                            return 3'b011;
+            BLT, LBU, XORI, XOR, DIV:                      return 3'b100;
+            BGE, LHU, SRLI, SRAI, SRL, SRA, DIVU:          return 3'b101;
+            BLTU, ORI, OR, REM:                            return 3'b110;
+            BGEU, ANDI, AND, REMU:                         return 3'b111;
+            default:                                       return 3'b000; // LUI/AUIPC/JAL (unused)
+        endcase
+    endfunction
+
+    function bit [6:0] get_funct7(instr_e o);
+        case (o)
+            SUB, SRA, SRAI:                                 return 7'b0100000;
+            MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU: return 7'b0000001;
+            default:                                        return 7'b0000000;
+        endcase
+    endfunction
+
+    
+endpackage
+`endif
