@@ -11,9 +11,10 @@
 #     set NO_DPI_EXPORTS 0          ;# enable DPI exports (requires a C/C++ compiler)
 #     set EXIT_ON_DONE 1            ;# close Questa after the test (batch use)
 #
-# By default Questa uses its precompiled UVM/DPI library and the script
-# disables automatic DPI export wrappers. FREE_MODELSIM instead compiles the
-# UVM sources with UVM_NO_DPI. UVM_SRC also supplies uvm_macros.svh.
+# Compile the project's UVM 1.2 source explicitly (Questa may otherwise pick
+# its built-in UVM 1.1d). UVM_NO_DPI avoids requiring a separate C compiler;
+# this environment does not use UVM DPI/backdoor functions. UVM_SRC supplies
+# both uvm_pkg.sv and uvm_macros.svh.
 # -----------------------------------------------------------------------------
 
 # Resolve the project root from this script, not from Questa's launch folder.
@@ -111,15 +112,11 @@ if {[file exists work]} {
 vlib work
 vmap work work
 
-# 1) UVM package. Questa's precompiled UVM includes the DPI implementation;
-# do not shadow it with a source-compiled uvm_pkg that has unresolved DPI
-# imports. Free ModelSim has no such precompiled package, so compile UVM in
-# its DPI-free mode instead.
-if {$FREE_MODELSIM} {
-    vlog -work work -sv +define+UVM_NO_DPI $UVM_INCLUDE [file join $UVM_SRC uvm_pkg.sv]
-} else {
-    puts "Using Questa's precompiled UVM 1.2 package and DPI library."
-}
+# 1) Compile the exact UVM 1.2 package from UVM_SRC. Without this, some
+# Questa installs silently select their built-in UVM 1.1d package, which has
+# incompatible method/macro signatures. This testbench does not use DPI
+# backdoor access, so UVM_NO_DPI removes the C-library dependency.
+vlog -work work -sv +define+UVM_NO_DPI $UVM_INCLUDE [file join $UVM_SRC uvm_pkg.sv]
 
 # 2) CV32E40P RTL packages, then RTL modules.
 vlog -work work -sv \
