@@ -8,11 +8,12 @@
 #     set TEST mul_basic_test       ;# default: mul_all_ops_test
 #     set UVM_SRC /path/to/uvm-1.2/src
 #     set FREE_MODELSIM 1           ;# ModelSim Intel Starter only
+#     set NO_DPI_EXPORTS 0          ;# enable DPI exports (requires a C/C++ compiler)
 #     set EXIT_ON_DONE 1            ;# close Questa after the test (batch use)
 #
-# By default the script leaves Questa open after the test so it can be
-# inspected or rerun. UVM 1.2 is taken from UVM_SRC, UVM_HOME, or the
-# simulator's MODEL_TECH installation path.
+# By default the script leaves Questa open and disables DPI exports, so
+# Questa won't need an external C/C++ compiler for this SV-only testbench.
+# UVM 1.2 is taken from UVM_SRC, UVM_HOME, or the simulator's MODEL_TECH path.
 # -----------------------------------------------------------------------------
 
 # Resolve the project root from this script, not from Questa's launch folder.
@@ -23,9 +24,10 @@ if {$_run_do eq ""} {
 set PROJECT_ROOT [file dirname [file normalize $_run_do]]
 cd $PROJECT_ROOT
 
-if {![info exists TEST]}          { set TEST mul_all_ops_test }
-if {![info exists FREE_MODELSIM]} { set FREE_MODELSIM 0 }
-if {![info exists EXIT_ON_DONE]}  { set EXIT_ON_DONE 0 }
+if {![info exists TEST]}           { set TEST mul_all_ops_test }
+if {![info exists FREE_MODELSIM]}  { set FREE_MODELSIM 0 }
+if {![info exists NO_DPI_EXPORTS]} { set NO_DPI_EXPORTS 1 }
+if {![info exists EXIT_ON_DONE]}   { set EXIT_ON_DONE 0 }
 
 if {[lsearch -exact {mul_basic_test mul_all_ops_test} $TEST] < 0} {
     error "Unknown TEST '$TEST'. Choose mul_basic_test or mul_all_ops_test."
@@ -145,8 +147,12 @@ vlog -work work -sv $UVM_INCLUDE \
     mul_private_tb/mul_int_test_pkg.sv \
     mul_private_tb/mul_int_tb_top.sv
 
-# 5) Load and run. The script intentionally does not quit Questa by default.
-if {$FREE_MODELSIM} {
+# 5) Load and run. The testbench is SystemVerilog-only; its UVM/DUT checks
+# do not use exported DPI functions. Disable automatic DPI export builds by
+# default so Questa doesn't require an external C/C++ compiler (vsim-7019).
+# Set NO_DPI_EXPORTS=0 only if your testbench needs DPI exports and a compiler
+# is configured. The free ModelSim mode always uses -nodpiexports.
+if {$FREE_MODELSIM || $NO_DPI_EXPORTS} {
     vsim -onfinish stop -nodpiexports work.mul_int_tb_top +UVM_TESTNAME=$TEST
 } else {
     vsim -onfinish stop work.mul_int_tb_top +UVM_TESTNAME=$TEST
