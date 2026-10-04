@@ -29,7 +29,7 @@ module mul_int_tb_top;
     logic rst_n = 0;
     always #5 clk = ~clk;
 
-    logic [31:0] mem [MEM_WORDS];
+    logic [31:0] mem [0:MEM_WORDS-1];
 
     // ---------------- OBI signals ----------------
     logic        instr_req, instr_gnt, instr_rvalid;
@@ -110,7 +110,7 @@ module mul_int_tb_top;
         string          test_name;
         mul_int_program prog;
 
-        if (!$value$plusargs("UVM_TESTNAME=%s", test_name)) test_name = "mul_basic_test";
+        if (!$value$plusargs("UVM_TESTNAME=%s", test_name)) test_name = "mul_all_ops_test";
         prog = mul_int_program::get(test_name);
         foreach (mem[i]) mem[i] = JAL_SELF;
         foreach (prog.code[i]) mem[i] = prog.code[i];
@@ -123,6 +123,10 @@ module mul_int_tb_top;
             end
         join_none
 
+        // Let every time-zero initial block run first. In particular, the
+        // bound wrapper must put alu_mul_vif into uvm_config_db before UVM's
+        // build_phase asks for it. This avoids simulator scheduling races.
+        #0;
         run_test(test_name);
     end
 

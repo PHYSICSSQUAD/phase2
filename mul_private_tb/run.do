@@ -1,53 +1,236 @@
-# ---------------------------------------------------------------------
-# run.do - PRIVATE MUL integration test (ModelSim / Questa)
+# -----------------------------------------------------------------------------
+# run.do - Standalone Questa integration run for the RV32M MUL/DIV environment
 #
-# Run from the REPOSITORY ROOT:
-#   vsim -c -do "set TEST mul_basic_test; do mul_private_tb/run.do"
-#   vsim -c -do "set TEST mul_all_ops_test; do mul_private_tb/run.do"
+# Required project layout (no shared_pkg folder is needed):
 #
-# Options (set before "do"):
-#   TEST          mul_basic_test (default) | mul_all_ops_test
-#   FREE_MODELSIM 1 = free ModelSim-Intel edition:
-#                   - UVM compiled with UVM_NO_DPI, vsim -nodpiexports
-#                   - +define+MUL_NO_COVERGROUP (no covergroup licence)
-#   UVM_SRC       UVM 1.2 source dir (default: the simulator's copy)
-# ---------------------------------------------------------------------
+#   your_project/
+#     mul_env/
+#     mul_private_tb/
+#     rtl/
+#
+# The script finds your_project from its own location, so it does not matter
+# which directory is currently open in Questa.
+#
+# GUI, run the complete test and keep the simulation open:
+#   set TEST mul_all_ops_test
+#   set KEEP_OPEN 1
+#   do mul_private_tb/run.do
+#
+# GUI, run both tests:
+#   set TEST all
+#   set KEEP_OPEN 1
+#   do mul_private_tb/run.do
+#
+# Command line, run both tests and exit:
+#   vsim -c -do "set TEST all; set KEEP_OPEN 0; do mul_private_tb/run.do"
+#
+# Options set before "do":
+#   TEST          mul_basic_test | mul_all_ops_test (default) | all
+#   COVERAGE      1 (default) = enable Questa coverage and save UCDB files
+#                 0 = disable covergroups and code coverage
+#   KEEP_OPEN     1 (default) = leave the last simulation open for debug
+#                 0 = close Questa after the run (useful in command-line mode)
+#   UVM_SRC       UVM 1.2 src directory. Normally found automatically.
+#   UVM_VERBOSITY UVM_LOW (default), UVM_MEDIUM, UVM_HIGH, ...
+#
+# Notes:
+# - UVM is compiled with UVM_NO_DPI. The test needs no DPI library and is more
+#   portable between Windows and Linux Questa installations.
+# - A private, minimal tb_pkg is compiled from mul_int_test_pkg.sv first. It
+#   replaces the missing shared_pkg only for this standalone three-folder run.
+# - Only cv32e40p_register_file_ff.sv is compiled. The latch register-file file
+#   implements the same module and must not be compiled at the same time.
+# -----------------------------------------------------------------------------
 
-if {![info exists TEST]}          {set TEST mul_basic_test}
-if {![info exists FREE_MODELSIM]} {set FREE_MODELSIM 0}
-if {![info exists UVM_SRC]}       {set UVM_SRC $env(MODEL_TECH)/../verilog_src/uvm-1.2/src}
+if {![info exists TEST]}          {set TEST mul_all_ops_test}
+if {![info exists COVERAGE]}      {set COVERAGE 1}
+if {![info exists KEEP_OPEN]}     {set KEEP_OPEN 1}
+if {![info exists UVM_VERBOSITY]} {set UVM_VERBOSITY UVM_LOW}
 
-if {$FREE_MODELSIM} {
-    set UVM_DEFS  "+define+UVM_NO_DPI"
-    set COV_DEFS  "+define+MUL_NO_COVERGROUP"
-    set VSIM_OPTS "-nodpiexports"
-} else {
-    set UVM_DEFS  ""
-    set COV_DEFS  ""
-    set VSIM_OPTS ""
+# Find the project root from this run.do file, not from Questa's current pwd.
+set SCRIPT_DIR [file dirname [file normalize [info script]]]
+set ROOT_DIR   [file dirname $SCRIPT_DIR]
+cd $ROOT_DIR
+
+puts ""
+puts "============================================================"
+puts " RV32M private integration test"
+puts " Project root : $ROOT_DIR"
+puts " Test         : $TEST"
+puts " Coverage     : $COVERAGE"
+puts "============================================================"
+puts ""
+
+# Check the exact three-folder layout before compiling anything.
+foreach required_dir {mul_env mul_private_tb rtl rtl/package} {
+    if {![file isdirectory [file join $ROOT_DIR $required_dir]]} {
+        error "Missing required directory: [file join $ROOT_DIR $required_dir]"
+    }
 }
 
-if {[file exists work]} {vdel -lib work -all}
+# Find the UVM 1.2 source shipped with Questa. The user may override this by
+# setting UVM_SRC before running the script.
+if {![info exists UVM_SRC]} {
+    set UVM_CANDIDATES {}
+
+    if {[info exists env(UVM_HOME)]} {
+        lappend UVM_CANDIDATES [file join $env(UVM_HOME) src]
+        lappend UVM_CANDIDATES $env(UVM_HOME)
+    }
+    if {[info exists env(QUESTA_HOME)]} {
+        lappend UVM_CANDIDATES [file join $env(QUESTA_HOME) verilog_src uvm-1.2 src]
+    }
+    if {[info exists env(MODEL_TECH)]} {
+        lappend UVM_CANDIDATES [file join $env(MODEL_TECH) .. verilog_src uvm-1.2 src]
+    }
+    if {[info exists env(MTI_HOME)]} {
+        lappend UVM_CANDIDATES [file join $env(MTI_HOME) verilog_src uvm-1.2 src]
+    }
+
+    foreach candidate $UVM_CANDIDATES {
+        set candidate [file normalize $candidate]
+        if {[file isfile [file join $candidate uvm_pkg.sv]]} {
+            set UVM_SRC $candidate
+            break
+        }
+    }
+}
+
+if {![info exists UVM_SRC] || ![file isfile [file join $UVM_SRC uvm_pkg.sv]]} {
+    error "UVM 1.2 was not found. Set UVM_SRC to the directory that contains uvm_pkg.sv, then run this script again."
+}
+set UVM_SRC [file normalize $UVM_SRC]
+puts "Using UVM_SRC: $UVM_SRC"
+
+# TEST may select one test or a two-test regression.
+switch -- $TEST {
+    mul_basic_test   {set TEST_LIST {mul_basic_test}}
+    mul_all_ops_test {set TEST_LIST {mul_all_ops_test}}
+    all              {set TEST_LIST {mul_basic_test mul_all_ops_test}}
+    default {
+        error "Unknown TEST '$TEST'. Use mul_basic_test, mul_all_ops_test, or all."
+    }
+}
+
+# Start from a clean library. Unload a previous run first so the script can be
+# executed again from the same GUI session.
+catch {quit -sim}
+if {[file exists work]} {
+    catch {vdel -lib work -all}
+    file delete -force work
+}
 vlib work
 
-# 1. UVM
-eval vlog -sv $UVM_DEFS +incdir+$UVM_SRC $UVM_SRC/uvm_pkg.sv
+# -----------------------------------------------------------------------------
+# 1. UVM 1.2. UVM_NO_DPI removes the platform-specific C/DPI dependency.
+# -----------------------------------------------------------------------------
+set CMD [list vlog -sv -work work "+define+UVM_NO_DPI" "+incdir+$UVM_SRC" [file join $UVM_SRC uvm_pkg.sv]]
+puts "\n-- Compiling UVM 1.2"
+eval $CMD
 
-# 2. RTL (packages first; the latch register file is an alternative
-#    implementation of the same module, so only the FF one is used)
-vlog -sv rtl/package/cv32e40p_apu_core_pkg.sv rtl/package/cv32e40p_fpu_pkg.sv rtl/package/cv32e40p_pkg.sv
+# -----------------------------------------------------------------------------
+# 2. Small standalone tb_pkg from the existing private-test file.
+#    This first pass compiles only instruction types and encoding helpers.
+# -----------------------------------------------------------------------------
+set CMD [list vlog -sv -work work "+define+MUL_PRIVATE_TB_TYPES" [file join mul_private_tb mul_int_test_pkg.sv]]
+puts "\n-- Compiling standalone instruction types"
+eval $CMD
+
+# -----------------------------------------------------------------------------
+# 3. CV32E40P RTL: packages first, then modules. Do not compile both register
+#    file implementations because both files define cv32e40p_register_file.
+# -----------------------------------------------------------------------------
+set RTL_PACKAGES [list \
+    [file join rtl package cv32e40p_apu_core_pkg.sv] \
+    [file join rtl package cv32e40p_fpu_pkg.sv] \
+    [file join rtl package cv32e40p_pkg.sv]]
+
+set CMD [list vlog -sv -work work]
+if {$COVERAGE} {lappend CMD -cover bcesft}
+foreach f $RTL_PACKAGES {lappend CMD $f}
+puts "\n-- Compiling RTL packages"
+eval $CMD
+
 set RTL_FILES {}
-foreach f [lsort [glob rtl/*.sv]] {
-    if {![string match *register_file_latch* $f]} {lappend RTL_FILES $f}
+foreach f [lsort [glob [file join rtl *.sv]]] {
+    if {![string match *register_file_latch.sv $f]} {
+        lappend RTL_FILES $f
+    }
 }
-eval vlog -sv $RTL_FILES
 
-# 3. MUL environment (team code) - includes the bind
-eval vlog -sv $COV_DEFS +incdir+$UVM_SRC -f mul_env/mul.f
+set CMD [list vlog -sv -work work]
+if {$COVERAGE} {lappend CMD -cover bcesft}
+foreach f $RTL_FILES {lappend CMD $f}
+puts "\n-- Compiling RTL modules"
+eval $CMD
 
-# 4. Private integration TB
-vlog -sv +incdir+$UVM_SRC mul_private_tb/mul_int_test_pkg.sv mul_private_tb/mul_int_tb_top.sv
+# -----------------------------------------------------------------------------
+# 4. RV32M UVM environment. Compile explicitly instead of mul.f because mul.f
+#    is the normal team filelist and expects shared_pkg/tb_pkg.
+# -----------------------------------------------------------------------------
+set CMD [list vlog -sv -work work "+incdir+$UVM_SRC" "+incdir+[file join $ROOT_DIR mul_env]"]
+if {!$COVERAGE} {lappend CMD "+define+MUL_NO_COVERGROUP"}
+lappend CMD \
+    [file join mul_env alu_mul_if.sv] \
+    [file join mul_env alu_mul_bind.sv] \
+    [file join mul_env mul_pkg.sv]
+puts "\n-- Compiling RV32M MUL/DIV environment"
+eval $CMD
 
-eval vsim -c $VSIM_OPTS work.mul_int_tb_top +UVM_TESTNAME=$TEST
-run -all
-quit -f
+# -----------------------------------------------------------------------------
+# 5. Private test package and top. This second compile of mul_int_test_pkg.sv
+#    has no MUL_PRIVATE_TB_TYPES define, so it builds the actual UVM tests.
+# -----------------------------------------------------------------------------
+set CMD [list vlog -sv -work work "+incdir+$UVM_SRC" \
+    [file join mul_private_tb mul_int_test_pkg.sv] \
+    [file join mul_private_tb mul_int_tb_top.sv]]
+puts "\n-- Compiling private integration tests"
+eval $CMD
+
+# -----------------------------------------------------------------------------
+# 6. Simulate. TEST=all reuses the compiled library for both tests.
+# -----------------------------------------------------------------------------
+if {$COVERAGE} {
+    set OUT_DIR [file join $ROOT_DIR questa_out]
+    file mkdir $OUT_DIR
+}
+
+set TEST_INDEX 0
+foreach CURRENT_TEST $TEST_LIST {
+    incr TEST_INDEX
+    puts ""
+    puts "============================================================"
+    puts " Running $CURRENT_TEST"
+    puts "============================================================"
+
+    set CMD [list vsim]
+    if {$COVERAGE} {lappend CMD -coverage}
+    lappend CMD -voptargs=+acc work.mul_int_tb_top \
+        "+UVM_TESTNAME=$CURRENT_TEST" "+UVM_VERBOSITY=$UVM_VERBOSITY"
+    eval $CMD
+
+    run -all
+
+    if {$COVERAGE} {
+        set UCDB_FILE [file join $OUT_DIR "$CURRENT_TEST.ucdb"]
+        coverage save $UCDB_FILE
+        puts "Coverage database: $UCDB_FILE"
+    }
+
+    # Unload every simulation except the last one when the user wants to
+    # inspect it in the GUI.
+    if {$TEST_INDEX < [llength $TEST_LIST] || !$KEEP_OPEN} {
+        quit -sim
+    }
+}
+
+puts ""
+puts "============================================================"
+puts " Regression finished. Check the UVM summary for zero errors."
+if {$COVERAGE} {puts " UCDB files are in: [file join $ROOT_DIR questa_out]"}
+puts "============================================================"
+puts ""
+
+if {!$KEEP_OPEN} {
+    quit -force
+}

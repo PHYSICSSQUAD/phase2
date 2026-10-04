@@ -219,14 +219,16 @@ For DIV x23, x19, x21 with x19=7 and x21=2, the decoder sends rs2 on EX ALU oper
 
 ## Compilation
 
-ModelSim-Intel FPGA Starter 10.5b, UVM 1.2. The DPI DLL is blocked on this machine, so UVM is compiled with `+define+UVM_NO_DPI` and run with `vsim -nodpiexports`.
+The normal team repository compiles the shared instruction package first and then uses `mul.f`:
 
 ```text
 vlog -sv +define+UVM_NO_DPI +incdir+<uvm>/src <uvm>/src/uvm_pkg.sv
 vlog -sv +incdir+<uvm>/src -f mul_env/mul.f          (run from the repo root)
 ```
 
-The free ModelSim edition can **compile** covergroups, but it **refuses to elaborate** them because they need a Questa license. Compile `mul.f` with `+define+MUL_NO_COVERGROUP` on that edition (the coverage component then only counts received items). A full simulator (Questa, VCS or Xcelium) is needed to collect RV32M functional coverage.
+The standalone private run does not need `shared_pkg`; `run.do` gets the small compatible instruction-type subset from an existing private-test file. It also compiles UVM with `UVM_NO_DPI`, so no platform-specific UVM DPI library is required.
+
+The free ModelSim edition can **compile** covergroups, but it **refuses to elaborate** them because they need a Questa license. Define `MUL_NO_COVERGROUP` on that edition (the coverage component then only counts received items). Full Questa can collect both the RV32M functional coverage and RTL code coverage.
 
 ## Private Integration Test (`mul_private_tb/`)
 
@@ -236,11 +238,23 @@ Private and temporary, as the spec requires: it is **not** part of the team envi
 - `mul_int_test_pkg.sv`: hand-written programs and a checker that compares every observed operation with a **hand-computed** value (independent of `mul_ref_model`), with two tests:
   - `mul_basic_test`: unchanged regression test with MUL and MULH.
   - `mul_all_ops_test`: 31 checks covering all 8 operations, multiply corners, all signed DIV sign pairs, unsigned DIV/REM, divide-by-zero, signed overflow, exact division, and DIV-result forwarding into MUL.
-- `run.do`: compiles UVM, the RTL, `mul.f` and the TB, then runs.
+- `run.do`: supports a self-contained project with exactly `mul_env/`, `mul_private_tb/` and `rtl/`. It finds the project root from its own path, finds Questa's UVM 1.2 source, compiles the instruction types, RTL, environment and private TB in order, runs one or both tests, and optionally saves UCDB coverage files in `questa_out/`.
+
+From the Questa GUI, keep the finished simulation open for debug:
 
 ```text
-vsim -c -do "set FREE_MODELSIM 1; set TEST mul_all_ops_test; do mul_private_tb/run.do"
+set TEST mul_all_ops_test
+set KEEP_OPEN 1
+do mul_private_tb/run.do
 ```
+
+From a command shell, run both tests and exit:
+
+```text
+vsim -c -do "set TEST all; set KEEP_OPEN 0; do mul_private_tb/run.do"
+```
+
+If automatic UVM discovery does not match the installation, set `UVM_SRC` to the directory containing `uvm_pkg.sv` before `do`. Set `COVERAGE 0` only when coverage is not available; full Questa uses the default `COVERAGE 1` and saves one UCDB per test.
 
 Current regression results with UVM 1.2 and `MUL_NO_COVERGROUP`:
 - `mul_basic_test`: the unchanged multiply regression is 2/2 PASS.

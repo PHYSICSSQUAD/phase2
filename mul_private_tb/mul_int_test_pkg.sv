@@ -18,7 +18,75 @@
 //
 // No sequences: the core fetches the program from the memory in
 // mul_int_tb_top, exactly like real software.
+//
+// Standalone Questa folder support:
+// - The normal repository gets instruction types from shared_pkg/tb_pkg.
+// - A small three-folder project has only mul_env, mul_private_tb and rtl.
+// - run.do first compiles this file with MUL_PRIVATE_TB_TYPES defined.
+//   In that pass only the small compatible tb_pkg below is compiled.
+// - run.do later compiles this file normally to build the real tests.
 //----------------------------------------------------------------------
+
+`ifdef MUL_PRIVATE_TB_TYPES
+
+// Only the instruction definitions used by this private RV32M test are
+// repeated here. This keeps the three-folder project self-contained without
+// changing the team's normal tb_pkg or creating another source file.
+package tb_pkg;
+
+    typedef struct packed {
+        logic [6:0] funct7;
+        logic [4:0] rs2;
+        logic [4:0] rs1;
+        logic [2:0] funct3;
+        logic [4:0] rd;
+        logic [6:0] opcode;
+    } r_type_t;
+
+    typedef union packed {
+        logic [31:0] raw;
+        r_type_t     r_type;
+    } instr_t;
+
+    typedef enum logic [3:0] {
+        LUI, ADDI,
+        MUL, MULH, MULHSU, MULHU,
+        DIV, DIVU, REM, REMU
+    } instr_e;
+
+    function bit [6:0] get_opcode(instr_e op);
+        case (op)
+            LUI:     return 7'b0110111;
+            ADDI:    return 7'b0010011;
+            default: return 7'b0110011;
+        endcase
+    endfunction
+
+    function bit [2:0] get_funct3(instr_e op);
+        case (op)
+            ADDI, MUL: return 3'b000;
+            MULH:      return 3'b001;
+            MULHSU:    return 3'b010;
+            MULHU:     return 3'b011;
+            DIV:       return 3'b100;
+            DIVU:      return 3'b101;
+            REM:       return 3'b110;
+            REMU:      return 3'b111;
+            default:   return 3'b000;
+        endcase
+    endfunction
+
+    function bit [6:0] get_funct7(instr_e op);
+        case (op)
+            MUL, MULH, MULHSU, MULHU,
+            DIV, DIVU, REM, REMU: return 7'b0000001;
+            default:              return 7'b0000000;
+        endcase
+    endfunction
+
+endpackage
+
+`else
 
 package mul_int_test_pkg;
 
@@ -234,3 +302,5 @@ package mul_int_test_pkg;
     endclass
 
 endpackage
+
+`endif // MUL_PRIVATE_TB_TYPES
