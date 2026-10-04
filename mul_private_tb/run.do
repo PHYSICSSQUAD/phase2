@@ -31,8 +31,8 @@
 #                 1 = enable full Questa coverage and save UCDB files
 #   KEEP_OPEN     0 (default) = close Questa after the run (command-line mode)
 #                 1 = leave the last simulation open for GUI debug
-#   PROJECT_ROOT  Folder containing mul_env, mul_private_tb and rtl. Normally
-#                 found automatically from Questa's current directory.
+#   PROJECT_ROOT  Optional starting folder for the upward search. It may be the
+#                 project root or its mul_private_tb subfolder.
 #   UVM_SRC       UVM 1.2 src directory. Normally found automatically.
 #   UVM_VERBOSITY UVM_LOW (default), UVM_MEDIUM, UVM_HIGH, ...
 #
@@ -62,33 +62,34 @@ proc mul_has_project_layout {candidate} {
     return 1
 }
 
-# PROJECT_ROOT is the explicit override. Otherwise try both Tcl's current
-# directory and the shell PWD inherited by Questa, then walk up their parents.
+# Treat PROJECT_ROOT as the first search location, not only as an exact match.
+# This means PROJECT_ROOT=[pwd] also works when Questa was started from inside
+# mul_private_tb; the search then moves one level up to the real project root.
+set ROOT_DIR ""
+set ROOT_CANDIDATES {}
 if {[info exists PROJECT_ROOT]} {
-    set ROOT_DIR [file normalize $PROJECT_ROOT]
-} else {
-    set ROOT_DIR ""
-    set ROOT_CANDIDATES [list [pwd]]
-    if {[info exists env(PWD)]} {
-        lappend ROOT_CANDIDATES $env(PWD)
-    }
+    lappend ROOT_CANDIDATES $PROJECT_ROOT
+}
+lappend ROOT_CANDIDATES [pwd]
+if {[info exists env(PWD)]} {
+    lappend ROOT_CANDIDATES $env(PWD)
+}
 
-    foreach starting_dir $ROOT_CANDIDATES {
-        set candidate [file normalize $starting_dir]
-        for {set level 0} {$level < 6} {incr level} {
-            if {[mul_has_project_layout $candidate]} {
-                set ROOT_DIR $candidate
-                break
-            }
-            set parent [file dirname $candidate]
-            if {$parent eq $candidate} {
-                break
-            }
-            set candidate $parent
-        }
-        if {$ROOT_DIR ne ""} {
+foreach starting_dir $ROOT_CANDIDATES {
+    set candidate [file normalize $starting_dir]
+    for {set level 0} {$level < 6} {incr level} {
+        if {[mul_has_project_layout $candidate]} {
+            set ROOT_DIR $candidate
             break
         }
+        set parent [file dirname $candidate]
+        if {$parent eq $candidate} {
+            break
+        }
+        set candidate $parent
+    }
+    if {$ROOT_DIR ne ""} {
+        break
     }
 }
 
