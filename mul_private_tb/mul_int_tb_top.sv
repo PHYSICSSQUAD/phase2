@@ -1,6 +1,6 @@
 //----------------------------------------------------------------------
 // File       : mul_int_tb_top.sv
-// Description: PRIVATE integration top for the MUL environment.
+// Description: PRIVATE integration top for the RV32M MUL/DIV environment.
 //
 // - Instantiates the real cv32e40p_top and talks to it ONLY through
 //   its top-level ports (no hierarchical references into the DUT).
@@ -73,7 +73,7 @@ module mul_int_tb_top;
     );
 
     // ---------------- Attach the ALU_MUL interface (bind) ----------------
-    // The only MUL-related line in tb_top. It contains a "bind" that
+    // The only RV32M-monitor-related line in tb_top. It contains a "bind" that
     // puts alu_mul_if inside cv32e40p_core - see mul_env/alu_mul_bind.sv.
     alu_mul_bind mul_bind ();
 

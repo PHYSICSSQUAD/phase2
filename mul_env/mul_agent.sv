@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------
 // File       : mul_agent.sv
-// Description: Passive MUL agent = mul_config + virtual interface +
-//              mul_monitor (exactly the box drawn in the architecture).
+// Description: Passive RV32M MUL/DIV agent = mul_config + virtual
+//              interface + mul_monitor (the existing architecture box).
 //
 // Why an agent if it holds only a monitor?
 // - It keeps the same structure as every other team agent, so the team

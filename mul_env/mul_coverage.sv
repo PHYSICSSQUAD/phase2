@@ -1,9 +1,9 @@
 //----------------------------------------------------------------------
 // File       : mul_coverage.sv
-// Description: Functional coverage of MUL / MULH / MULHSU / MULHU.
-//              Part of the team "coverage_collector" (all monitors feed
-//              it in the architecture). Answers the question:
-//              "Did the tests exercise the interesting multiply cases?"
+// Description: Functional coverage of the eight RV32M multiply/divide
+//              operations. Part of the team "coverage_collector" (all
+//              monitors feed it in the architecture). Answers:
+//              "Did tests exercise the interesting MUL/DIV cases?"
 //
 // Why uvm_subscriber?
 // - A subscriber is a component with ONE built-in analysis_export and
@@ -11,10 +11,11 @@
 //
 // What is measured and WHY:
 // - cp_op                : every instruction executed at least once.
-// - cp_rs1/rs2_class     : corner values where multipliers usually
-//                          break: 0, 1, -1, max positive, min negative.
-// - cp_rs1/rs2_sign      : sign of each operand; MULH, MULHSU and MULHU
-//                          differ ONLY in how they treat the sign bit.
+// - cp_rs1/rs2_class     : corner values where arithmetic units break:
+//                          0, 1, -1, max positive and min negative.
+//                          op x rs2=zero also covers divide-by-zero.
+// - cp_rs1/rs2_sign      : sign of each operand; signed and unsigned
+//                          multiply/divide operations treat it differently.
 // - cx_op_sign           : every op with every sign combination.
 // - cx_op_rs1/rs2_class  : every corner value with every op.
 // - cx_op_extremes       : the hardest pairs (min_neg, max_pos, -1)
@@ -44,6 +45,10 @@ class mul_coverage extends uvm_subscriber #(mul_seq_item);
             bins mulh   = {MULH};
             bins mulhsu = {MULHSU};
             bins mulhu  = {MULHU};
+            bins div    = {DIV};
+            bins divu   = {DIVU};
+            bins rem    = {REM};
+            bins remu   = {REMU};
         }
 
         // Operand value classes: single corner values + the two ranges
@@ -136,7 +141,7 @@ class mul_coverage extends uvm_subscriber #(mul_seq_item);
         super.report_phase(phase);
 `ifndef MUL_NO_COVERGROUP
         `uvm_info(get_type_name(),
-            $sformatf("MUL functional coverage = %0.2f%% (%0d items sampled)",
+            $sformatf("RV32M MUL/DIV functional coverage = %0.2f%% (%0d items sampled)",
                       mul_cg.get_inst_coverage(), num_sampled), UVM_NONE)
 `else
         `uvm_info(get_type_name(),

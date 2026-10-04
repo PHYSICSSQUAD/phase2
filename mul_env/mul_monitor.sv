@@ -1,8 +1,9 @@
 //----------------------------------------------------------------------
 // File       : mul_monitor.sv
-// Description: Passive monitor of the MUL agent. Watches the ALU_MUL
-//              interface and publishes ONE mul_seq_item for every
-//              MUL / MULH / MULHSU / MULHU that completes in EX.
+// Description: Passive monitor of the RV32M MUL/DIV agent. Watches the
+//              ALU_MUL interface and publishes ONE mul_seq_item for
+//              every MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU that
+//              completes in EX.
 //
 // Why a monitor (and no driver)?
 // - The core fetches its own instructions (driven by the Instruction
@@ -15,20 +16,22 @@
 //   in EX is always the one that was in ID at the last id_valid edge.
 // - MUL takes 1 cycle in EX, MULH/MULHSU/MULHU take 5 cycles
 //   (cv32e40p_mult MUL_H FSM: IDLE->STEP0->STEP1->STEP2->FINISH).
+// - DIV/DIVU/REM/REMU run in cv32e40p_alu_div and take 3..35 cycles.
+//   They use the ALU path (ex_alu_en), not the multiplier path.
 // - ex_valid=1 only in the cycle the EX instruction finishes. During
-//   the MULH* iterations ex_valid=0, and the write-back data shows
-//   intermediate values that must NOT be checked.
+//   any multi-cycle iterations ex_valid=0, so intermediate values are
+//   never checked.
 // - Instructions in EX are never flushed (branches resolve in EX and
-//   only flush IF/ID), so every multiplier that enters EX completes.
+//   only flush IF/ID), so every operation that enters EX completes.
 //
 // Algorithm, at every rising clock edge (sampled through mon_cb):
-//   (1) COMPLETE: if ex_mult_en && ex_valid, the multiplier in EX
-//       finishes now -> build item from the instruction word recorded
-//       at step (2) earlier + operands + write-back data -> ap.write().
+//   (1) COMPLETE: if ex_valid and either the multiplier is enabled or
+//       the recorded instruction is DIV/REM on the ALU path, EX finishes
+//       now -> build item from the recorded word + operands + write-back
+//       data -> ap.write().
 //   (2) ENTER   : if id_valid, the instruction in ID moves into EX now
-//       -> remember its word. We record EVERY instruction (not only
-//       multiplies): if it is not a multiply, ex_mult_en stays 0 and
-//       step (1) simply never uses it. This needs no decoder signal.
+//       -> remember its word. We record EVERY instruction. Normal ALU
+//       instructions are ignored because they are not DIV/REM encodings.
 //   Order matters: a new MUL may enter EX on the same edge the old one
 //   leaves, so first finish the old one, then record the new one.
 //
@@ -87,15 +90,22 @@ class mul_monitor extends uvm_monitor;
                 continue;
             end
 
-            // ---- (1) COMPLETE: multiplier leaves EX on this edge ----
-            if (vif.mon_cb.ex_mult_en === 1'b1 && vif.mon_cb.ex_valid === 1'b1) begin
-                if (!ex_instr_valid) begin
-                    `uvm_error(get_type_name(),
-                        "EX multiplier completed but no multiplier instruction was seen entering EX")
+            // ---- (1) COMPLETE: current EX instruction leaves now ----
+            if (vif.mon_cb.ex_valid === 1'b1) begin
+                // All MUL operations use ex_mult_en. DIV/REM use the ALU,
+                // so identify those from the independently decoded word.
+                if (vif.mon_cb.ex_mult_en === 1'b1 ||
+                    (vif.mon_cb.ex_alu_en === 1'b1 && ex_instr_valid && is_div_or_rem(ex_instr))) begin
+                    if (!ex_instr_valid) begin
+                        `uvm_error(get_type_name(),
+                            "RV32M operation completed but no instruction was seen entering EX")
+                    end
+                    else begin
+                        publish_item();
+                    end
                 end
-                else begin
-                    publish_item();
-                end
+                // The current EX instruction is gone, even when it was a
+                // normal non-RV32M ALU instruction that we did not publish.
                 ex_instr_valid = 0;
             end
 
@@ -112,12 +122,12 @@ class mul_monitor extends uvm_monitor;
         mul_seq_item item;
         instr_e      op;
 
-        // Decode the recorded instruction. Anything that is not one of
-        // the 4 multiply instructions is out of MUL scope (e.g. a PULP
-        // dot-product). It is reported, never silently dropped.
-        if (!decode_mul(ex_instr, op)) begin
+        // Decode the recorded instruction. Anything using the multiplier
+        // that is not one of the 8 standard RV32M operations (for example
+        // a PULP dot-product) is reported, never silently dropped.
+        if (!decode_m_op(ex_instr, op)) begin
             `uvm_error(get_type_name(),
-                $sformatf("Multiplier used by a non RV32M-MUL instruction 0x%08h - not checked", ex_instr))
+                $sformatf("Execution unit used by a non-supported RV32M instruction 0x%08h - not checked", ex_instr))
             return;
         end
 
@@ -127,8 +137,16 @@ class mul_monitor extends uvm_monitor;
         item.instr    = ex_instr;
         item.op       = op;
         item.rd       = item.instr.r_type.rd;
-        item.rs1_val  = vif.mon_cb.ex_mult_operand_a;
-        item.rs2_val  = vif.mon_cb.ex_mult_operand_b;
+        if (is_div_op(op)) begin
+            // cv32e40p_decoder deliberately swaps the ALU inputs for
+            // DIV/REM: EX A is architectural rs2 and EX B is rs1.
+            item.rs1_val = vif.mon_cb.ex_alu_operand_b;
+            item.rs2_val = vif.mon_cb.ex_alu_operand_a;
+        end
+        else begin
+            item.rs1_val = vif.mon_cb.ex_mult_operand_a;
+            item.rs2_val = vif.mon_cb.ex_mult_operand_b;
+        end
         item.result   = vif.mon_cb.ex_wb_wdata;
         item.wb_we    = vif.mon_cb.ex_wb_we;
         item.wb_waddr = vif.mon_cb.ex_wb_waddr;
@@ -138,12 +156,11 @@ class mul_monitor extends uvm_monitor;
         ap.write(item);
     endfunction
 
-    // Returns 1 and the instruction name if 'raw' is MUL/MULH/MULHSU/MULHU.
-    // Uses the encoding helpers of the shared tb_pkg so every team decodes
-    // instructions the same way.
-    function bit decode_mul(logic [31:0] raw, output instr_e op);
-        instr_t      i;
-        instr_e      cand[4] = '{MUL, MULH, MULHSU, MULHU};
+    // Returns 1 for one of the 8 standard RV32M operations. Uses the
+    // shared tb_pkg helpers, independently of the DUT decoder.
+    function bit decode_m_op(logic [31:0] raw, output instr_e op);
+        instr_t i;
+        instr_e cand[8] = '{MUL, MULH, MULHSU, MULHU, DIV, DIVU, REM, REMU};
         i = raw;
         foreach (cand[k]) begin
             if (i.r_type.opcode === get_opcode(cand[k]) &&
@@ -157,10 +174,19 @@ class mul_monitor extends uvm_monitor;
         return 0;
     endfunction
 
+    function bit is_div_op(instr_e op);
+        return op == DIV || op == DIVU || op == REM || op == REMU;
+    endfunction
+
+    function bit is_div_or_rem(logic [31:0] raw);
+        instr_e op;
+        return decode_m_op(raw, op) && is_div_op(op);
+    endfunction
+
     function void report_phase(uvm_phase phase);
         super.report_phase(phase);
         `uvm_info(get_type_name(),
-            $sformatf("MUL monitor published %0d multiplier transactions", num_items), UVM_LOW)
+            $sformatf("RV32M monitor published %0d multiply/divide transactions", num_items), UVM_LOW)
     endfunction
 
 endclass

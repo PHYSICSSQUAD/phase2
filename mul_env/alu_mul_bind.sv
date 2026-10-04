@@ -35,7 +35,9 @@
 //   id_valid             : ID stage hands its instruction to EX
 //   instr_rdata_id       : instruction word currently in ID
 //   mult_en_ex           : ID/EX register - multiplier instruction in EX
-//   mult_operand_a/b_ex  : ID/EX registers - rs1/rs2 values
+//   mult_operand_a/b_ex  : ID/EX registers - MUL rs1/rs2 values
+//   alu_en_ex            : ID/EX register - ALU operation in EX
+//   alu_operand_a/b_ex   : ID/EX registers - DIV operands (decoder-swapped)
 //   ex_valid             : EX instruction finishes this cycle
 //   regfile_alu_*_fw     : EX write-back port to the register file
 //----------------------------------------------------------------------
@@ -50,6 +52,9 @@ module alu_mul_bind_wrap (
     input logic        ex_mult_en,
     input logic [31:0] ex_mult_operand_a,
     input logic [31:0] ex_mult_operand_b,
+    input logic        ex_alu_en,
+    input logic [31:0] ex_alu_operand_a,
+    input logic [31:0] ex_alu_operand_b,
     input logic        ex_valid,
     input logic        ex_wb_we,
     input logic [5:0]  ex_wb_waddr,
@@ -73,6 +78,9 @@ bind cv32e40p_core alu_mul_bind_wrap alu_mul_bind_i (
     .ex_mult_en        (mult_en_ex),
     .ex_mult_operand_a (mult_operand_a_ex),
     .ex_mult_operand_b (mult_operand_b_ex),
+    .ex_alu_en         (alu_en_ex),
+    .ex_alu_operand_a  (alu_operand_a_ex),
+    .ex_alu_operand_b  (alu_operand_b_ex),
     .ex_valid          (ex_valid),
     .ex_wb_we          (regfile_alu_we_fw),
     .ex_wb_waddr       (regfile_alu_waddr_fw),

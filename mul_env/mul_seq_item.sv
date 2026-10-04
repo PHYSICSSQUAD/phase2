@@ -1,7 +1,8 @@
 //----------------------------------------------------------------------
 // File       : mul_seq_item.sv
-// Description: One observed multiplier instruction (MUL, MULH, MULHSU,
-//              MULHU) as it completed in the EX stage.
+// Description: One observed RV32M multiply/divide instruction (MUL,
+//              MULH, MULHSU, MULHU, DIV, DIVU, REM or REMU) as it
+//              completed in the EX stage.
 //
 // Why "seq_item" if there is no sequence?
 // - The team names every transaction class *_seq_item. Here it is only
@@ -11,8 +12,9 @@
 //
 // Why does ONE item hold operands AND result?
 // - The monitor sees both in the same clock cycle (completion cycle of
-//   the instruction in EX). Packing them together means the scoreboard
-//   needs no FIFOs and no matching logic: each item is self-contained.
+//   the instruction in EX). The EX operands stay stable while MULH* or
+//   DIV/REM iterates. Packing them together means the scoreboard needs
+//   no FIFOs and no matching logic: each item is self-contained.
 //
 // Transaction flow:
 //   mul_monitor --(creates item)--> ap.write(item)

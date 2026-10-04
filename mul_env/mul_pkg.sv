@@ -1,7 +1,7 @@
 //----------------------------------------------------------------------
 // File       : mul_pkg.sv
-// Description: UVM package of the MUL verification environment.
-//              Everything class-based for MUL lives here, so other
+// Description: UVM package of the RV32M MUL/DIV verification environment.
+//              Everything class-based for MUL/DIV lives here, so other
 //              packages/tests only need "import mul_pkg::*;".
 //
 // Why `include instead of separate packages?

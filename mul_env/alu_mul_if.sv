@@ -25,9 +25,10 @@
 //   the name "alu_mul_vif".
 //
 // Sharing with the ALU agent:
-// - Only MUL-related signals are declared here. ex_valid and the EX
-//   write-back port are common to MUL and ALU; the ALU owner adds the
-//   ALU-only ports in the marked section (and in alu_mul_bind.sv).
+// - The interface observes the multiplier signals and the small ALU
+//   subset needed by DIV/DIVU/REM/REMU. ex_valid and the EX write-back
+//   port are common to both paths. More ALU-only ports can still be
+//   added in the marked section (and in alu_mul_bind.sv).
 //----------------------------------------------------------------------
 
 `timescale 1ns/1ps
@@ -40,7 +41,7 @@ interface alu_mul_if (
     // ---------------- ID -> EX hand-off -----------------------------
     // The EX stage keeps only decoded control signals, not the
     // instruction word. The monitor records the word when it moves
-    // from ID to EX so it can identify MUL/MULH/MULHSU/MULHU from the
+    // from ID to EX so it can identify all 8 RV32M operations from the
     // real encoding, independently of the DUT's own decoder.
     input logic        id_valid,          // 1 = ID instruction enters EX at this edge
     input logic [31:0] id_instr,          // instruction word currently in ID
@@ -50,14 +51,23 @@ interface alu_mul_if (
                                           // (1 cycle for MUL, 5 for MULH*)
     input logic [31:0] ex_mult_operand_a, // ID/EX reg: rs1 value (stable while MULH* iterates)
     input logic [31:0] ex_mult_operand_b, // ID/EX reg: rs2 value
-    input logic        ex_valid,          // EX instruction finishes THIS cycle. The only
-                                          // cycle in which a MULH* result is final.
+
+    // ---------------- EX stage ALU divider --------------------------
+    // DIV/REM run through the ALU, not cv32e40p_mult. The decoder swaps
+    // its ALU operands: operand A = rs2 (divisor), operand B = rs1
+    // (dividend). The monitor swaps them back when it builds the item.
+    input logic        ex_alu_en,          // ID/EX reg: ALU operation in EX
+    input logic [31:0] ex_alu_operand_a,   // DIV/REM divisor = architectural rs2
+    input logic [31:0] ex_alu_operand_b,   // DIV/REM dividend = architectural rs1
+
+    input logic        ex_valid,           // EX instruction finishes THIS cycle. The only
+                                           // cycle in which a multi-cycle result is final.
 
     // ---------------- EX write-back port (ALU/MUL/DIV -> RF) --------
-    // This is how a MUL result becomes architecturally visible.
+    // This is how the RV32M result becomes architecturally visible.
     input logic        ex_wb_we,          // write enable
     input logic [5:0]  ex_wb_waddr,       // rd (bit 5 = FP regs, always 0 for RV32IM)
-    input logic [31:0] ex_wb_wdata        // value written to rd (= multiplier result)
+    input logic [31:0] ex_wb_wdata        // value written to rd (= MUL/DIV/REM result)
 
     // ---------------- ALU-only ports: reserved for the ALU owner ----
 );
@@ -72,7 +82,9 @@ interface alu_mul_if (
         default input #1step;
         input rst_n;
         input id_valid, id_instr;
-        input ex_mult_en, ex_mult_operand_a, ex_mult_operand_b, ex_valid;
+        input ex_mult_en, ex_mult_operand_a, ex_mult_operand_b;
+        input ex_alu_en, ex_alu_operand_a, ex_alu_operand_b;
+        input ex_valid;
         input ex_wb_we, ex_wb_waddr, ex_wb_wdata;
     endclocking
 

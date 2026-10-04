@@ -1,21 +1,20 @@
 //----------------------------------------------------------------------
 // File       : mul_int_test_pkg.sv
-// Description: PRIVATE integration tests for the MUL environment.
+// Description: PRIVATE integration tests for the RV32M MUL/DIV environment.
 //              NOT part of the team environment - only used to prove
 //              that mul_env works with the real CV32E40P RTL.
 //
 // Contents:
 //   mul_int_program        : tiny hand-written programs + the expected
-//                            result of every multiply, computed by hand
-//   mul_int_expect_checker : compares each observed multiply with the
-//                            hand-computed value (cross-checks that the
-//                            monitor sees the right instructions in the
-//                            right order, independent of mul_ref_model)
+//                            result of every MUL/DIV operation, by hand
+//   mul_int_expect_checker : compares every observed RV32M operation
+//                            with that hand-computed value (cross-checks
+//                            order independently of mul_ref_model)
 //   mul_int_base_test      : creates mul_env + checker, waits for the
 //                            program to finish
 //   mul_basic_test         : 1 MUL + 1 MULH (the "first simple test")
-//   mul_all_ops_test       : all 4 ops, corner values, back-to-back and
-//                            dependent multiplies
+//   mul_all_ops_test       : all 8 RV32M ops, arithmetic corner values,
+//                            divide special cases and dependencies
 //
 // No sequences: the core fetches the program from the memory in
 // mul_int_tb_top, exactly like real software.
@@ -34,11 +33,12 @@ package mul_int_test_pkg;
     class mul_int_program;
 
         logic [31:0] code[$];        // machine code, loaded at address 0
-        instr_e      exp_op[$];      // expected multiply sequence
+        instr_e      exp_op[$];      // expected RV32M operation sequence
         logic [31:0] exp_result[$];  // hand-computed expected rd values
         string       name;
 
-        // R-type multiply. 'exp' is computed BY HAND in the comments.
+        // R-type RV32M operation. Keep the old function name so existing
+        // tests stay source-compatible. 'exp' is computed in comments.
         function void mul_op(instr_e op, int rd, int rs1, int rs2, logic [31:0] exp);
             code.push_back({get_funct7(op), 5'(rs2), 5'(rs1), get_funct3(op), 5'(rd), get_opcode(op)});
             exp_op.push_back(op);
@@ -90,6 +90,40 @@ package mul_int_test_pkg;
                     p.mul_op(MUL,    16, 14,  1, 32'h4000_0000);  // 0xC0000000*3 = 0x2_40000000
                     p.mul_op(MULHU,  17, 16, 16, 32'h1000_0000);  // (2^30)^2 = 2^60
                     p.mul_op(MUL,    18, 17, 17, 32'h0000_0000);  // (2^28)^2 = 2^56 -> low = 0
+
+                    // Division operands
+                    p.addi(19, 0,  7);                            // x19 =  7
+                    p.addi(20, 0, -7);                            // x20 = -7
+                    p.addi(21, 0,  2);                            // x21 =  2
+                    p.addi(22, 0, -2);                            // x22 = -2
+
+                    // Signed quotient: all sign combinations
+                    p.mul_op(DIV, 23, 19, 21, 32'h0000_0003);     //  7 /  2 =  3
+                    p.mul_op(DIV, 24, 20, 21, 32'hFFFF_FFFD);     // -7 /  2 = -3
+                    p.mul_op(DIV, 25, 19, 22, 32'hFFFF_FFFD);     //  7 / -2 = -3
+                    p.mul_op(DIV, 26, 20, 22, 32'h0000_0003);     // -7 / -2 =  3
+
+                    // Unsigned quotient and signed/unsigned remainder
+                    p.mul_op(DIVU, 27,  2,  1, 32'h5555_5554);    // 0xFFFFFFFE / 3
+                    p.mul_op(REM,  28, 20, 21, 32'hFFFF_FFFF);    // -7 % 2 = -1
+                    p.mul_op(REM,  29, 19, 22, 32'h0000_0001);    //  7 % -2 = 1
+                    p.mul_op(REMU, 30,  2,  1, 32'h0000_0002);    // 0xFFFFFFFE % 3
+
+                    // RISC-V divide-by-zero rules
+                    p.mul_op(DIV,  31, 19,  0, 32'hFFFF_FFFF);    // quotient = all ones
+                    p.mul_op(DIVU, 23,  2,  0, 32'hFFFF_FFFF);    // quotient = all ones
+                    p.mul_op(REM,  24, 19,  0, 32'h0000_0007);    // remainder = dividend
+                    p.mul_op(REMU, 25,  2,  0, 32'hFFFF_FFFE);    // remainder = dividend
+
+                    // Signed overflow and exact unsigned division
+                    p.mul_op(DIV,  26,  3, 15, 32'h8000_0000);    // min_neg / -1 = min_neg
+                    p.mul_op(REM,  27,  3, 15, 32'h0000_0000);    // min_neg % -1 = 0
+                    p.mul_op(DIVU, 28, 15, 15, 32'h0000_0001);    // UINT_MAX / UINT_MAX
+                    p.mul_op(REMU, 29, 15, 15, 32'h0000_0000);    // UINT_MAX % UINT_MAX
+
+                    // DIV result forwarded directly into a following MUL
+                    p.mul_op(DIV, 30, 19, 21, 32'h0000_0003);
+                    p.mul_op(MUL, 31, 30, 19, 32'h0000_0015);     // 3 * 7 = 21
                 end
                 default: `uvm_fatal("MUL_INT_PROG", {"No program for test ", test_name})
             endcase
@@ -115,7 +149,7 @@ package mul_int_test_pkg;
 
         function void write(mul_seq_item t);
             if (num_seen >= prog.exp_op.size()) begin
-                `uvm_error("MUL_INT_CHK", {"Unexpected extra multiply: ", t.convert2string()})
+                `uvm_error("MUL_INT_CHK", {"Unexpected extra RV32M operation: ", t.convert2string()})
             end
             else if (t.op !== prog.exp_op[num_seen] || t.result !== prog.exp_result[num_seen]) begin
                 `uvm_error("MUL_INT_CHK", $sformatf("#%0d expected %s result=0x%08h, observed %s",
@@ -130,7 +164,7 @@ package mul_int_test_pkg;
 
         function void check_phase(uvm_phase phase);
             if (num_seen != prog.exp_op.size())
-                `uvm_error("MUL_INT_CHK", $sformatf("Observed %0d multiplies, program contains %0d",
+                `uvm_error("MUL_INT_CHK", $sformatf("Observed %0d RV32M operations, program contains %0d",
                     num_seen, prog.exp_op.size()))
         endfunction
     endclass
@@ -164,15 +198,15 @@ package mul_int_test_pkg;
             env.agent.ap.connect(chk.analysis_export);
         endfunction
 
-        // run_phase: keep the test alive until every multiply of the
-        // program was observed (or a timeout hits).
+        // run_phase: keep the test alive until every RV32M operation in
+        // the program was observed (or a timeout hits).
         task run_phase(uvm_phase phase);
             phase.raise_objection(this);
             fork
                 wait (chk.num_seen == prog.exp_op.size());
                 begin
                     #100us;
-                    `uvm_error(get_type_name(), "Timeout waiting for the program's multiplies")
+                    `uvm_error(get_type_name(), "Timeout waiting for the program's RV32M operations")
                 end
             join_any
             disable fork;

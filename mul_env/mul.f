@@ -1,4 +1,4 @@
-// Filelist of the MUL verification environment (paths relative to the
+// Filelist of the RV32M MUL/DIV verification environment (paths relative to the
 // repository root). Compile UVM and the RTL first, then:
 //   vlog -sv -f mul_env/mul.f
 // alu_mul_bind.sv binds the interface into cv32e40p_core, so the RTL

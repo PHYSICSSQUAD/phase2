@@ -1,6 +1,6 @@
 //----------------------------------------------------------------------
 // File       : mul_env.sv
-// Description: Small container that wires the MUL pieces together:
+// Description: Small container that wires the RV32M MUL/DIV pieces together:
 //
 //      +------------------------- mul_env ---------------------------+
 //      |  mul_agent (passive)                                        |

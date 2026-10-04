@@ -1,8 +1,8 @@
 //----------------------------------------------------------------------
 // File       : mul_scoreboard.sv
-// Description: MUL part of the "ALU_MUL Scoreboard" of the team
-//              architecture. Checks every observed MUL / MULH / MULHSU /
-//              MULHU against mul_ref_model.
+// Description: RV32M MUL/DIV part of the "ALU_MUL Scoreboard" of the
+//              team architecture. Checks every observed MUL/MULH/
+//              MULHSU/MULHU/DIV/DIVU/REM/REMU against mul_ref_model.
 //
 // Checks per instruction:
 //   1. result   == mul_ref_model.predict(op, rs1_val, rs2_val)
@@ -92,14 +92,14 @@ class mul_scoreboard extends uvm_scoreboard;
     function void check_phase(uvm_phase phase);
         super.check_phase(phase);
         if (pass_count + fail_count == 0) begin
-            `uvm_warning(get_type_name(), "No MUL/MULH/MULHSU/MULHU instruction was checked in this test")
+            `uvm_warning(get_type_name(), "No MUL/MULH/MULHSU/MULHU/DIV/DIVU/REM/REMU instruction was checked in this test")
         end
     endfunction
 
     function void report_phase(uvm_phase phase);
         string s;
         super.report_phase(phase);
-        s = $sformatf("\n---------------- MUL SCOREBOARD SUMMARY ----------------\n");
+        s = $sformatf("\n-------------- RV32M MUL/DIV SCOREBOARD SUMMARY ----------\n");
         s = {s, $sformatf("  Checked : %0d   PASS : %0d   FAIL : %0d\n",
                           pass_count + fail_count, pass_count, fail_count)};
         foreach (op_count[op]) begin
