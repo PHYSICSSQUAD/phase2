@@ -254,7 +254,7 @@ From a command shell, run both tests and exit:
 vsim -c -do "set TEST all; set KEEP_OPEN 0; do mul_private_tb/run.do"
 ```
 
-If automatic UVM discovery does not match the installation, set `UVM_SRC` to the directory containing `uvm_pkg.sv` before `do`. Set `COVERAGE 0` only when coverage is not available; full Questa uses the default `COVERAGE 1` and saves one UCDB per test.
+If automatic UVM discovery does not match the installation, set `UVM_SRC` to the directory containing `uvm_pkg.sv` before `do`. Portable mode is the default (`COVERAGE 0`): it defines `MUL_NO_COVERGROUP` and elaborates with `-nocvg`, so licenses without the `svverification` feature can run this non-random private test. A full Questa license can use `set COVERAGE 1` to collect coverage and save one UCDB per test.
 
 Current regression results with UVM 1.2 and `MUL_NO_COVERGROUP`:
 - `mul_basic_test`: the unchanged multiply regression is 2/2 PASS.

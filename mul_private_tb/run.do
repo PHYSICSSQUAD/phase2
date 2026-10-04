@@ -26,8 +26,9 @@
 #
 # Options set before "do":
 #   TEST          mul_basic_test | mul_all_ops_test (default) | all
-#   COVERAGE      1 (default) = enable Questa coverage and save UCDB files
-#                 0 = disable covergroups and code coverage
+#   COVERAGE      0 (default) = portable mode for licenses without
+#                 svverification; disables covergroups and code coverage
+#                 1 = enable full Questa coverage and save UCDB files
 #   KEEP_OPEN     0 (default) = close Questa after the run (command-line mode)
 #                 1 = leave the last simulation open for GUI debug
 #   PROJECT_ROOT  Folder containing mul_env, mul_private_tb and rtl. Normally
@@ -45,7 +46,7 @@
 # -----------------------------------------------------------------------------
 
 if {![info exists TEST]}          {set TEST mul_all_ops_test}
-if {![info exists COVERAGE]}      {set COVERAGE 1}
+if {![info exists COVERAGE]}      {set COVERAGE 0}
 if {![info exists KEEP_OPEN]}     {set KEEP_OPEN 0}
 if {![info exists UVM_VERBOSITY]} {set UVM_VERBOSITY UVM_LOW}
 
@@ -241,7 +242,13 @@ foreach CURRENT_TEST $TEST_LIST {
     puts "============================================================"
 
     set CMD [list vsim]
-    if {$COVERAGE} {lappend CMD -coverage}
+    if {$COVERAGE} {
+        lappend CMD -coverage
+    } else {
+        # Questa-Intel/limited licenses need this at elaboration as well as
+        # MUL_NO_COVERGROUP at compilation.
+        lappend CMD -nocvg -nodpiexports
+    }
     lappend CMD -voptargs=+acc work.mul_int_tb_top \
         "+UVM_TESTNAME=$CURRENT_TEST" "+UVM_VERBOSITY=$UVM_VERBOSITY"
     eval $CMD
