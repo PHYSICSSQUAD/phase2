@@ -1,19 +1,3 @@
-//----------------------------------------------------------------------
-// File       : mul_int_tb_top.sv
-// Description: PRIVATE integration top for the RV32M MUL/DIV environment.
-//
-// - Instantiates the real cv32e40p_top and talks to it ONLY through
-//   its top-level ports (no hierarchical references into the DUT).
-// - The ALU_MUL interface is attached inside the core by the bind in
-//   mul_env/alu_mul_bind.sv (one line below: "alu_mul_bind mul_bind();")
-//   and registers itself in uvm_config_db, so this file never
-//   connects any interface signal.
-// - A minimal single-port memory answers both OBI buses (instruction
-//   fetch and data) with grant in the same cycle and rvalid one cycle
-//   later. It replaces the team's Instruction/Data agents, which are
-//   not needed to validate the MUL environment.
-//----------------------------------------------------------------------
-
 `timescale 1ns/1ps
 
 module mul_int_tb_top;
@@ -22,8 +6,8 @@ module mul_int_tb_top;
     `include "uvm_macros.svh"
     import mul_int_test_pkg::*;
 
-    localparam int          MEM_WORDS = 1024;               // 4 KB at address 0
-    localparam logic [31:0] JAL_SELF  = 32'h0000_006F;      // jal x0, 0
+    localparam int          MEM_WORDS = 1024;
+    localparam logic [31:0] JAL_SELF  = 32'h0000_006F;
 
     logic clk   = 0;
     logic rst_n = 0;
@@ -31,7 +15,6 @@ module mul_int_tb_top;
 
     logic [31:0] mem [0:MEM_WORDS-1];
 
-    // ---------------- OBI signals ----------------
     logic        instr_req, instr_gnt, instr_rvalid;
     logic [31:0] instr_addr, instr_rdata;
     logic        data_req, data_gnt, data_rvalid, data_we;
@@ -72,17 +55,11 @@ module mul_int_tb_top;
         .core_sleep_o        ()
     );
 
-    // ---------------- Attach the ALU_MUL interface (bind) ----------------
-    // The only RV32M-monitor-related line in tb_top. It contains a "bind" that
-    // puts alu_mul_if inside cv32e40p_core - see mul_env/alu_mul_bind.sv.
     alu_mul_bind mul_bind ();
 
-    // ---------------- Simple OBI memory ----------------
     assign instr_gnt = instr_req;
     assign data_gnt  = data_req;
 
-    // plain "always" (not always_ff): mem is also preloaded by the
-    // initial block below
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             instr_rvalid <= 1'b0;
@@ -105,7 +82,6 @@ module mul_int_tb_top;
         end
     end
 
-    // ---------------- Program load, reset, UVM start ----------------
     initial begin
         string          test_name;
         mul_int_program prog;
@@ -123,9 +99,6 @@ module mul_int_tb_top;
             end
         join_none
 
-        // Let every time-zero initial block run first. In particular, the
-        // bound wrapper must put alu_mul_vif into uvm_config_db before UVM's
-        // build_phase asks for it. This avoids simulator scheduling races.
         #0;
         run_test(test_name);
     end
