@@ -8,8 +8,8 @@
 #     mul_private_tb/
 #     rtl/
 #
-# The script finds your_project from its own location, so it does not matter
-# which directory is currently open in Questa.
+# Run Questa from your_project or from your_project/mul_private_tb. The script
+# searches upward from the current directory. PROJECT_ROOT can override it.
 #
 # GUI, run the complete test and keep the simulation open:
 #   set TEST mul_all_ops_test
@@ -28,8 +28,10 @@
 #   TEST          mul_basic_test | mul_all_ops_test (default) | all
 #   COVERAGE      1 (default) = enable Questa coverage and save UCDB files
 #                 0 = disable covergroups and code coverage
-#   KEEP_OPEN     1 (default) = leave the last simulation open for debug
-#                 0 = close Questa after the run (useful in command-line mode)
+#   KEEP_OPEN     0 (default) = close Questa after the run (command-line mode)
+#                 1 = leave the last simulation open for GUI debug
+#   PROJECT_ROOT  Folder containing mul_env, mul_private_tb and rtl. Normally
+#                 found automatically from Questa's current directory.
 #   UVM_SRC       UVM 1.2 src directory. Normally found automatically.
 #   UVM_VERBOSITY UVM_LOW (default), UVM_MEDIUM, UVM_HIGH, ...
 #
@@ -44,12 +46,54 @@
 
 if {![info exists TEST]}          {set TEST mul_all_ops_test}
 if {![info exists COVERAGE]}      {set COVERAGE 1}
-if {![info exists KEEP_OPEN]}     {set KEEP_OPEN 1}
+if {![info exists KEEP_OPEN]}     {set KEEP_OPEN 0}
 if {![info exists UVM_VERBOSITY]} {set UVM_VERBOSITY UVM_LOW}
 
-# Find the project root from this run.do file, not from Questa's current pwd.
-set SCRIPT_DIR [file dirname [file normalize [info script]]]
-set ROOT_DIR   [file dirname $SCRIPT_DIR]
+# Return 1 only for the project folder that contains the complete three-folder
+# layout. Do not use "info script" here: some Questa versions report an
+# internal path such as /mtitcl/vsim instead of the real .do file path.
+proc mul_has_project_layout {candidate} {
+    foreach required_dir {mul_env mul_private_tb rtl rtl/package} {
+        if {![file isdirectory [file join $candidate $required_dir]]} {
+            return 0
+        }
+    }
+    return 1
+}
+
+# PROJECT_ROOT is the explicit override. Otherwise try both Tcl's current
+# directory and the shell PWD inherited by Questa, then walk up their parents.
+if {[info exists PROJECT_ROOT]} {
+    set ROOT_DIR [file normalize $PROJECT_ROOT]
+} else {
+    set ROOT_DIR ""
+    set ROOT_CANDIDATES [list [pwd]]
+    if {[info exists env(PWD)]} {
+        lappend ROOT_CANDIDATES $env(PWD)
+    }
+
+    foreach starting_dir $ROOT_CANDIDATES {
+        set candidate [file normalize $starting_dir]
+        for {set level 0} {$level < 6} {incr level} {
+            if {[mul_has_project_layout $candidate]} {
+                set ROOT_DIR $candidate
+                break
+            }
+            set parent [file dirname $candidate]
+            if {$parent eq $candidate} {
+                break
+            }
+            set candidate $parent
+        }
+        if {$ROOT_DIR ne ""} {
+            break
+        }
+    }
+}
+
+if {$ROOT_DIR eq "" || ![mul_has_project_layout $ROOT_DIR]} {
+    error "Cannot find the project folder. Run Questa from the folder containing mul_env, mul_private_tb and rtl, or set PROJECT_ROOT explicitly before do. Tcl pwd=[pwd]"
+}
 cd $ROOT_DIR
 
 puts ""
@@ -60,13 +104,6 @@ puts " Test         : $TEST"
 puts " Coverage     : $COVERAGE"
 puts "============================================================"
 puts ""
-
-# Check the exact three-folder layout before compiling anything.
-foreach required_dir {mul_env mul_private_tb rtl rtl/package} {
-    if {![file isdirectory [file join $ROOT_DIR $required_dir]]} {
-        error "Missing required directory: [file join $ROOT_DIR $required_dir]"
-    }
-}
 
 # Find the UVM 1.2 source shipped with Questa. The user may override this by
 # setting UVM_SRC before running the script.

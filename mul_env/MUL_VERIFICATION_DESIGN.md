@@ -238,7 +238,7 @@ Private and temporary, as the spec requires: it is **not** part of the team envi
 - `mul_int_test_pkg.sv`: hand-written programs and a checker that compares every observed operation with a **hand-computed** value (independent of `mul_ref_model`), with two tests:
   - `mul_basic_test`: unchanged regression test with MUL and MULH.
   - `mul_all_ops_test`: 31 checks covering all 8 operations, multiply corners, all signed DIV sign pairs, unsigned DIV/REM, divide-by-zero, signed overflow, exact division, and DIV-result forwarding into MUL.
-- `run.do`: supports a self-contained project with exactly `mul_env/`, `mul_private_tb/` and `rtl/`. It finds the project root from its own path, finds Questa's UVM 1.2 source, compiles the instruction types, RTL, environment and private TB in order, runs one or both tests, and optionally saves UCDB coverage files in `questa_out/`.
+- `run.do`: supports a self-contained project with exactly `mul_env/`, `mul_private_tb/` and `rtl/`. It finds the project root from Questa's current directory (or `PROJECT_ROOT`), finds Questa's UVM 1.2 source, compiles the instruction types, RTL, environment and private TB in order, runs one or both tests, and optionally saves UCDB coverage files in `questa_out/`.
 
 From the Questa GUI, keep the finished simulation open for debug:
 
